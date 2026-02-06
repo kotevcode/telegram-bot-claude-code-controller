@@ -17,18 +17,36 @@ export async function getRecentSessions(limit = 20): Promise<HistoryEntry[]> {
     for (const line of lines) {
       try {
         const parsed = JSON.parse(line);
+        const sessionId = String(parsed.sessionId ?? parsed.session_id ?? "");
+        const projectPath = String(parsed.project ?? parsed.project_path ?? parsed.projectPath ?? parsed.cwd ?? "");
+        // timestamp can be epoch ms (number) or ISO string
+        const rawTs = parsed.timestamp ?? parsed.created_at ?? "";
+        const timestamp = typeof rawTs === "number"
+          ? new Date(rawTs).toISOString()
+          : String(rawTs);
+
         entries.push({
-          sessionId: String(parsed.session_id ?? parsed.sessionId ?? ""),
-          projectPath: String(parsed.project_path ?? parsed.projectPath ?? parsed.cwd ?? ""),
-          timestamp: String(parsed.timestamp ?? parsed.created_at ?? ""),
+          sessionId,
+          projectPath,
+          timestamp,
           model: String(parsed.model ?? "unknown"),
-          summary: parsed.summary ?? parsed.query ?? undefined,
+          summary: parsed.display ?? parsed.summary ?? parsed.query ?? undefined,
         });
       } catch {
         // Skip malformed lines
         continue;
       }
     }
+
+    // Deduplicate by sessionId (history has one entry per message, keep the latest)
+    const deduplicated = new Map<string, HistoryEntry>();
+    for (const entry of entries) {
+      if (entry.sessionId) {
+        deduplicated.set(entry.sessionId, entry);
+      }
+    }
+    entries.length = 0;
+    entries.push(...deduplicated.values());
 
     // Sort by most recent first
     entries.sort(
@@ -42,6 +60,27 @@ export async function getRecentSessions(limit = 20): Promise<HistoryEntry[]> {
     }
     throw err;
   }
+}
+
+export async function resolveSessionId(partialId: string): Promise<{ sessionId: string; projectPath: string } | null> {
+  // If it already looks like a full UUID, return as-is
+  if (partialId.includes("-") && partialId.length > 20) {
+    const sessions = await getRecentSessions(100);
+    const match = sessions.find((s) => s.sessionId === partialId);
+    return match ? { sessionId: match.sessionId, projectPath: match.projectPath } : { sessionId: partialId, projectPath: process.cwd() };
+  }
+
+  // Search history for a session ID starting with the partial
+  const sessions = await getRecentSessions(100);
+  const matches = sessions.filter((s) => s.sessionId.startsWith(partialId));
+
+  if (matches.length === 1) {
+    return { sessionId: matches[0].sessionId, projectPath: matches[0].projectPath };
+  }
+  if (matches.length > 1) {
+    return { sessionId: matches[0].sessionId, projectPath: matches[0].projectPath };
+  }
+  return null;
 }
 
 export async function getSessionsForProject(

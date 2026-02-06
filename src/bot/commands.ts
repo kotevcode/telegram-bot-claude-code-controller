@@ -1,7 +1,7 @@
 import type { Context } from "grammy";
 import type { SessionManager } from "../claude/session-manager.js";
 import type { Notifier } from "../notifications/notifier.js";
-import { getRecentSessions } from "../claude/history.js";
+import { getRecentSessions, resolveSessionId } from "../claude/history.js";
 import { buildSessionListKeyboard } from "./keyboards.js";
 
 import type { AssistantMessage } from "../types.js";
@@ -112,10 +112,10 @@ export function registerCommands(
 
     resume: async (ctx: Context) => {
       const text = ctx.message?.text || "";
-      const sessionId = text.split(" ").slice(1).join(" ").trim();
+      const inputId = text.split(" ").slice(1).join(" ").trim();
 
-      if (!sessionId) {
-        await ctx.reply("Usage: /resume <session-id>");
+      if (!inputId) {
+        await ctx.reply("Usage: /resume <session-id>\n\nYou can use a partial ID (first 8 chars) or the full UUID.");
         return;
       }
 
@@ -123,15 +123,23 @@ export function registerCommands(
       if (!chatId) return;
 
       try {
-        const session = sessionManager.resumeSession(chatId, sessionId, process.cwd());
+        const resolved = await resolveSessionId(inputId);
+        if (!resolved) {
+          await ctx.reply(`Session not found for ID: ${inputId}\n\nUse /sessions to see available sessions.`);
+          return;
+        }
+
+        const session = sessionManager.resumeSession(chatId, resolved.sessionId, resolved.projectPath);
 
         notifier.subscribe(session);
 
-        session.on("response", (text: string, _message: AssistantMessage) => {
-          sendChunkedMessage(ctx, text);
+        session.on("response", (responseText: string, _message: AssistantMessage) => {
+          sendChunkedMessage(ctx, responseText);
         });
 
-        await ctx.reply(`Session resumed: ${sessionId.substring(0, 8)}`);
+        await ctx.reply(
+          `Session resumed: ${resolved.sessionId.substring(0, 8)}\nProject: ${resolved.projectPath}`,
+        );
       } catch (err) {
         await ctx.reply(`Failed to resume session: ${(err as Error).message}`);
       }
@@ -298,17 +306,23 @@ export function registerCommands(
           });
         }
       } else if (data.startsWith("resume:")) {
-        const sessionId = data.substring(7);
+        const inputId = data.substring(7);
         try {
-          const session = sessionManager.resumeSession(chatId, sessionId, process.cwd());
+          const resolved = await resolveSessionId(inputId);
+          if (!resolved) {
+            await ctx.answerCallbackQuery({ text: "Session not found" });
+            return;
+          }
+
+          const session = sessionManager.resumeSession(chatId, resolved.sessionId, resolved.projectPath);
           notifier.subscribe(session);
 
-          session.on("response", (text: string, _message: AssistantMessage) => {
-            sendChunkedMessage(ctx, text);
+          session.on("response", (responseText: string, _message: AssistantMessage) => {
+            sendChunkedMessage(ctx, responseText);
           });
 
           await ctx.answerCallbackQuery({ text: "Resuming..." });
-          await ctx.reply(`Resumed session: ${sessionId.substring(0, 8)}`);
+          await ctx.reply(`Resumed session: ${resolved.sessionId.substring(0, 8)}\nProject: ${resolved.projectPath}`);
         } catch (err) {
           await ctx.answerCallbackQuery({
             text: (err as Error).message,
