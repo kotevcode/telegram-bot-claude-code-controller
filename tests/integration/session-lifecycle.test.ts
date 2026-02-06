@@ -61,7 +61,8 @@ describe("Session Lifecycle Integration", () => {
     expect(stdinData.length).toBe(1);
     const sent = JSON.parse(stdinData[0].trim());
     expect(sent.type).toBe("user");
-    expect(sent.content).toBe("What files are in this project?");
+    expect(sent.message.role).toBe("user");
+    expect(sent.message.content).toBe("What files are in this project?");
 
     // Simulate response
     const responses: string[] = [];

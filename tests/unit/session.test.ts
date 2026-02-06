@@ -99,7 +99,7 @@ describe("Session", () => {
       ).getWrittenData() as string[];
       expect(stdinData).toHaveLength(1);
       expect(stdinData[0]).toBe(
-        JSON.stringify({ type: "user", content: "Hello, Claude!" }) + "\n",
+        JSON.stringify({ type: "user", message: { role: "user", content: "Hello, Claude!" } }) + "\n",
       );
     });
 

@@ -47,7 +47,10 @@ export type ClaudeEvent = SystemInit | AssistantMessage | ResultMessage;
 
 export interface UserMessage {
   type: "user";
-  content: string;
+  message: {
+    role: "user";
+    content: string;
+  };
 }
 
 // Session types

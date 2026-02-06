@@ -92,7 +92,10 @@ export class Session extends EventEmitter {
 
     const userMessage: UserMessage = {
       type: "user",
-      content: message,
+      message: {
+        role: "user",
+        content: message,
+      },
     };
 
     this.status = "busy";
